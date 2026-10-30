@@ -3,98 +3,149 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dọn dẹp bản ghi</title>
-  <script src="https://unpkg.com/@lark-base-open/js-sdk@0.5.15/dist/index.umd.js"></script>
+  <title>Dọn dẹp</title>
+  <!-- Nhúng Bitable SDK chính thức qua CDN chuẩn của Lark -->
+  <script src="https://lf1-cdn-tos.bytegoofy.com/goofy/lark/bitable_extension/js-sdk/0.5.15/index.umd.js"></script>
   <style>
     * { box-sizing: border-box; }
-    body { font-family: sans-serif; padding: 16px; margin: 0; }
-    button { width: 100%; padding: 11px; background: #d83931; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
-    #log { margin-top: 14px; padding: 10px; background: #f5f6f7; font-size: 12px; max-height: 250px; overflow-y: auto; white-space: pre-wrap; }
-    .modal { display: none; position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 999; }
-    .modal-box { background: #fff; padding: 20px; border-radius: 8px; width: 90%; text-align: center; }
-    .modal-btns { display: flex; gap: 10px; margin-top: 15px; }
-    .modal-btns button { flex: 1; padding: 8px; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 14px; margin: 0; background: #fff; }
+    button { width: 100%; padding: 11px; background: #d83931; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; }
+    button:disabled { background: #bbbfc4; cursor: not-allowed; }
+    #log { margin-top: 12px; padding: 10px; background: #f5f6f7; border: 1px solid #dee0e3; border-radius: 6px; font-size: 12px; max-height: 220px; overflow-y: auto; white-space: pre-wrap; line-height: 1.5; }
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center; }
+    .modal-box { background: #fff; padding: 18px; border-radius: 8px; width: 85%; max-width: 300px; text-align: center; }
+    .modal-box h4 { margin: 0 0 10px; font-size: 15px; }
+    .modal-box p { margin: 0 0 15px; font-size: 13px; color: #646a73; }
+    .modal-actions { display: flex; gap: 8px; }
+    .modal-actions button { flex: 1; padding: 8px; border-radius: 4px; font-size: 13px; }
   </style>
 </head>
 <body>
-  <button id="btn-scan">Quét & Xóa</button>
-  <div id="log">Sẵn sàng (v1.3 - Debug)</div>
+  <button id="btn-run" onclick="startScan()">Quét & Xóa (v1.4)</button>
+  <div id="log">Sẵn sàng thực thi...</div>
 
-  <div id="modalConfirm" class="modal">
+  <div id="modalBox" class="modal-overlay">
     <div class="modal-box">
-      <h4 style="margin:0 0 10px">Xác nhận xóa</h4>
-      <p id="modal-text">Bạn chắc chắn muốn xóa?</p>
-      <div class="modal-btns">
-        <button onclick="document.getElementById('modalConfirm').style.display='none'">Hủy</button>
-        <button id="btn-ok" style="background:#d83931; color:#fff; border:none">Xóa luôn</button>
+      <h4>Xác nhận xóa</h4>
+      <p id="modal-msg"></p>
+      <div class="modal-actions">
+        <button onclick="closeModal()" style="background:#f2f3f5; color:#1f2329; border:1px solid #dee0e3;">Hủy</button>
+        <button onclick="executeDelete()" style="background:#d83931; color:#fff;">Đồng ý</button>
       </div>
     </div>
   </div>
 
   <script>
-    const bitable = window.bitableSDK.bitable;
     const logEl = document.getElementById('log');
-    let targetTable = null;
-    let recordsToDelete = [];
+    let toDeleteList = [];
+    let curTable = null;
 
-    function log(msg) { logEl.innerText += '\n' + msg; logEl.scrollTop = logEl.scrollHeight; }
+    function writeLog(msg) {
+      logEl.innerText += '\n' + msg;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
 
-    document.getElementById('btn-scan').onclick = async () => {
+    function closeModal() {
+      document.getElementById('modalBox').style.display = 'none';
+      document.getElementById('btn-run').disabled = false;
+      writeLog('Đã hủy thao tác.');
+    }
+
+    // Nhận diện biến bitable từ các CDN khác nhau
+    function getBitableInstance() {
+      if (window.bitable) return window.bitable;
+      if (window.bitableSDK && window.bitableSDK.bitable) return window.bitableSDK.bitable;
+      return null;
+    }
+
+    async function startScan() {
+      const btn = document.getElementById('btn-run');
+      btn.disabled = true;
+      logEl.innerText = 'Đang kích hoạt SDK...';
+
+      const bitable = getBitableInstance();
+      if (!bitable) {
+        writeLog('LỖI: Chưa nạp được SDK của Lark. Kiểm tra lại kết nối mạng!');
+        btn.disabled = false;
+        return;
+      }
+
       try {
-        log('Đang lấy bảng...');
-        targetTable = await bitable.base.getActiveTable();
-        const fields = await targetTable.getFieldList();
-        const colExpired = fields.find(f => f.name.includes('Hết hạn (Xóa)'));
+        writeLog('Đang kết nối vào bảng...');
+        curTable = await bitable.base.getActiveTable();
+        const tableName = await curTable.getName();
+        writeLog(`Bảng hiện tại: [${tableName}]`);
 
-        if (!colExpired) return log('LỖI: Không tìm thấy cột [Hết hạn (Xóa)]');
+        const fields = await curTable.getFieldList();
+        const targetCol = fields.find(f => f.name.includes('Hết hạn (Xóa)'));
 
-        const recordIds = await targetTable.getRecordIdList();
-        log(`Tìm thấy ${recordIds.length} dòng. Đang đọc dữ liệu...`);
-        recordsToDelete = [];
+        if (!targetCol) {
+          writeLog('LỖI: Không tìm thấy cột [Hết hạn (Xóa)]');
+          btn.disabled = false;
+          return;
+        }
 
-        for (let i = 0; i < recordIds.length; i++) {
-          const id = recordIds[i];
+        const ids = await curTable.getRecordIdList();
+        writeLog(`Tổng dòng: ${ids.length}. Đang kiểm tra...`);
+        toDeleteList = [];
+
+        for (const id of ids) {
           let text = '';
-          
-          // Đọc trực tiếp dữ liệu thô
-          const val = await colExpired.getValue(id);
-          
-          if (val) {
-            if (typeof val === 'string') text = val;
-            else if (Array.isArray(val)) text = val.map(v => v.text || v.name || '').join('');
-            else if (typeof val === 'object') text = val.text || JSON.stringify(val);
+          try {
+            text = await curTable.getCellString(targetCol.id, id);
+          } catch(e) {}
+
+          if (!text) {
+            try {
+              const raw = await targetCol.getValue(id);
+              if (typeof raw === 'string') text = raw;
+              else if (Array.isArray(raw)) text = raw.map(x => x?.text || '').join('');
+              else if (raw && typeof raw === 'object') text = raw.text || JSON.stringify(raw);
+            } catch(e) {}
           }
 
-          // In thử giá trị 3 dòng đầu tiên ra màn hình để debug
-          if (i < 3) {
-            log(`Dòng ${i+1} đọc được: "${text}"`);
-          }
-
-          if (text && text.includes('Xóa')) {
-            recordsToDelete.push(id);
+          if (text && text.trim().includes('Xóa')) {
+            toDeleteList.push(id);
           }
         }
 
-        if (recordsToDelete.length === 0) {
-          return log('Quét xong. KHÔNG tìm thấy dòng nào chứa chữ "Xóa"!');
+        if (toDeleteList.length === 0) {
+          writeLog('Quét xong. Không có dòng nào có chữ "Xóa".');
+          btn.disabled = false;
+          return;
         }
 
-        document.getElementById('modal-text').innerHTML = `Phát hiện <b>${recordsToDelete.length}</b> dòng có chữ Xóa. Xóa nhé?`;
-        document.getElementById('modalConfirm').style.display = 'flex';
+        // Mở popup xác nhận
+        document.getElementById('modal-msg').innerHTML = `Tìm thấy <b>${toDeleteList.length}</b> dòng có chữ "Xóa".<br>Xóa vĩnh viễn các dòng này?`;
+        document.getElementById('modalBox').style.display = 'flex';
       } catch (err) {
-        log('Lỗi: ' + err.message);
+        writeLog('Lỗi: ' + (err.message || JSON.stringify(err)));
+        btn.disabled = false;
       }
-    };
+    }
 
-    document.getElementById('btn-ok').onclick = async () => {
-      document.getElementById('modalConfirm').style.display = 'none';
-      log(`Đang xóa ${recordsToDelete.length} dòng...`);
-      let success = 0;
-      for (const id of recordsToDelete) {
-        try { await targetTable.deleteRecord(id); success++; } catch(e){}
+    async function executeDelete() {
+      document.getElementById('modalBox').style.display = 'none';
+      writeLog(`Bắt đầu xóa ${toDeleteList.length} dòng...`);
+      let count = 0;
+
+      for (const id of toDeleteList) {
+        try {
+          await curTable.deleteRecord(id);
+          count++;
+        } catch (e) {
+          try {
+            await curTable.deleteRecords([id]);
+            count++;
+          } catch (e2) {
+            writeLog(`Lỗi xóa: ${e2.message || e2}`);
+          }
+        }
       }
-      log(`Đã xóa thành công: ${success} dòng.`);
-    };
+
+      writeLog(`HOÀN TẤT: Đã xóa ${count}/${toDeleteList.length} dòng.`);
+      document.getElementById('btn-run').disabled = false;
+    }
   </script>
 </body>
 </html>
