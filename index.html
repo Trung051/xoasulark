@@ -11,12 +11,20 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       padding: 16px;
       margin: 0;
-      background: #fff;
+      background: #ffffff;
       color: #1f2329;
     }
     h3 { margin: 0 0 8px 0; font-size: 16px; font-weight: 600; }
-    p { margin: 0 0 14px 0; font-size: 13px; color: #646a73; line-height: 1.4; }
-    button {
+    p { margin: 0 0 14px 0; font-size: 13px; color: #646a73; line-height: 1.5; }
+    .badge {
+      display: inline-block;
+      padding: 1px 5px;
+      background: #f2f3f5;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    button.btn-main {
       width: 100%;
       padding: 11px;
       background: #d83931;
@@ -27,7 +35,8 @@
       font-weight: 600;
       cursor: pointer;
     }
-    button:disabled { background: #bbbfc4; cursor: not-allowed; }
+    button.btn-main:hover { background: #b82a23; }
+    button.btn-main:disabled { background: #bbbfc4; cursor: not-allowed; }
     #log {
       margin-top: 14px;
       padding: 10px;
@@ -35,99 +44,189 @@
       border: 1px solid #dee0e3;
       border-radius: 6px;
       font-size: 12px;
-      max-height: 250px;
+      max-height: 220px;
       overflow-y: auto;
       white-space: pre-wrap;
       line-height: 1.5;
     }
+
+    /* Modal Popup */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.45);
+      z-index: 999;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .modal-box {
+      background: #fff;
+      border-radius: 8px;
+      padding: 20px;
+      width: 100%;
+      max-width: 320px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+      text-align: center;
+    }
+    .modal-box h4 {
+      margin: 0 0 10px 0;
+      font-size: 16px;
+      color: #1f2329;
+    }
+    .modal-box p {
+      font-size: 13px;
+      color: #646a73;
+      margin: 0 0 18px 0;
+    }
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+    }
+    .modal-btn {
+      flex: 1;
+      padding: 9px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+    }
+    .btn-cancel {
+      background: #f2f3f5;
+      color: #1f2329;
+      border-color: #dee0e3;
+    }
+    .btn-cancel:hover { background: #e5e6eb; }
+    .btn-confirm {
+      background: #d83931;
+      color: #fff;
+    }
+    .btn-confirm:hover { background: #b82a23; }
   </style>
 </head>
 <body>
   <h3>Dọn dẹp bản ghi hết hạn</h3>
-  <p>Tự động quét cột <b>[Hết hạn (Xóa)]</b> có chữ <b>"Xóa"</b> và xóa trực tiếp.</p>
-  <button id="btn-del">Xóa các dòng quá hạn</button>
+  <p>Quét cột <span class="badge">[Hết hạn (Xóa)]</span> có chữ <b>"Xóa"</b> và dọn sạch bảng hiện tại.</p>
+
+  <button id="btn-scan" class="btn-main">Quét dữ liệu quá hạn</button>
   <div id="log">Sẵn sàng...</div>
+
+  <!-- Popup xác nhận -->
+  <div id="confirmModal" class="modal-overlay">
+    <div class="modal-box">
+      <h4>Xác nhận xóa bản ghi?</h4>
+      <p id="modal-desc">Bạn có chắc chắn muốn xóa không?</p>
+      <div class="modal-actions">
+        <button id="btn-modal-cancel" class="modal-btn btn-cancel">Hủy</button>
+        <button id="btn-modal-ok" class="modal-btn btn-confirm">Đồng ý xóa</button>
+      </div>
+    </div>
+  </div>
 
   <script>
     const bitable = window.bitableSDK.bitable;
-    const btn = document.getElementById('btn-del');
+    const btnScan = document.getElementById('btn-scan');
     const logEl = document.getElementById('log');
+    
+    // Elements Popup
+    const modal = document.getElementById('confirmModal');
+    const modalDesc = document.getElementById('modal-desc');
+    const btnModalCancel = document.getElementById('btn-modal-cancel');
+    const btnModalOk = document.getElementById('btn-modal-ok');
 
-    function print(msg) {
+    let pendingDeleteIds = [];
+    let activeTable = null;
+
+    function log(msg) {
       logEl.innerText += '\n' + msg;
       logEl.scrollTop = logEl.scrollHeight;
     }
 
-    btn.onclick = async () => {
+    // Bước 1: Quét và hiển thị Popup xác nhận
+    btnScan.onclick = async () => {
       try {
-        btn.disabled = true;
-        logEl.innerText = 'Đang kết nối bảng...';
+        btnScan.disabled = true;
+        logEl.innerText = 'Đang kiểm tra kết nối bảng...';
 
-        // Lấy đúng bảng hiện tại đang hiển thị
-        const table = await bitable.base.getActiveTable();
-        const fieldList = await table.getFieldList();
+        activeTable = await bitable.base.getActiveTable();
+        const tableName = await activeTable.getName();
+        log(`Đang thao tác tại bảng: [${tableName}]`);
 
-        // Tìm trường cột [Hết hạn (Xóa)]
-        const targetField = fieldList.find(f => f.name.includes('Hết hạn (Xóa)'));
+        const fieldList = await activeTable.getFieldList();
+        const targetField = fieldList.find(f => f.name.trim().includes('Hết hạn (Xóa)'));
+
         if (!targetField) {
-          print('LỖI: Không tìm thấy cột [Hết hạn (Xóa)]');
-          btn.disabled = false;
+          log('LỖI: Không tìm thấy cột [Hết hạn (Xóa)]!');
+          btnScan.disabled = false;
           return;
         }
 
-        print('Đang lấy danh sách các dòng...');
-        const recordIds = await table.getRecordIdList();
-        print(`Tìm thấy tổng cộng ${recordIds.length} dòng.`);
+        log('Đang đọc danh sách dòng...');
+        const recordIds = await activeTable.getRecordIdList();
+        log(`Tổng số dòng trong bảng: ${recordIds.length}`);
 
-        const toDelete = [];
+        pendingDeleteIds = [];
 
         for (const id of recordIds) {
           let text = '';
           try {
-            // Lấy trực tiếp văn bản hiển thị từ cột công thức
-            text = await table.getCellString(targetField.id, id);
-          } catch (e) {
-            const raw = await targetField.getValue(id);
-            text = typeof raw === 'string' ? raw : JSON.stringify(raw);
+            // Lấy chuỗi hiển thị
+            text = await activeTable.getCellString(targetField.id, id);
+          } catch (e) {}
+
+          // Nếu getCellString không lấy được, giải nén giá trị thô của Formula
+          if (!text) {
+            try {
+              const raw = await targetField.getValue(id);
+              if (typeof raw === 'string') {
+                text = raw;
+              } else if (Array.isArray(raw)) {
+                text = raw.map(item => item?.text || '').join('');
+              } else if (raw && typeof raw === 'object') {
+                text = raw.text || JSON.stringify(raw);
+              }
+            } catch (e) {}
           }
 
           if (text && text.trim().includes('Xóa')) {
-            toDelete.push(id);
+            pendingDeleteIds.push(id);
           }
         }
 
-        if (toDelete.length === 0) {
-          print('Không có dòng nào chứa chữ "Xóa".');
-          btn.disabled = false;
+        if (pendingDeleteIds.length === 0) {
+          log('Quét xong. Không có dòng nào có chữ "Xóa" cần dọn dẹp.');
+          btnScan.disabled = false;
           return;
         }
 
-        print(`Phát hiện ${toDelete.length} dòng có chữ "Xóa". Đang xóa...`);
-
-        // Xóa lần lượt từng dòng nếu deleteRecords hàng loạt bị chặn quyền
-        let successCount = 0;
-        try {
-          await table.deleteRecords(toDelete);
-          successCount = toDelete.length;
-        } catch (batchErr) {
-          print('Xóa hàng loạt không được, chuyển sang xóa từng dòng...');
-          for (const id of toDelete) {
-            try {
-              await table.deleteRecord(id);
-              successCount++;
-            } catch (singleErr) {
-              print(`Lỗi xóa dòng ${id}: ${singleErr.message}`);
-            }
-          }
-        }
-
-        print(`Xong! Đã xóa thành công ${successCount} dòng.`);
+        // Hiện popup xác nhận
+        modalDesc.innerHTML = `Đã tìm thấy <b>${pendingDeleteIds.length}</b> dòng có chữ "Xóa".<br>Hành động này không thể hoàn tác!`;
+        modal.style.display = 'flex';
       } catch (err) {
-        print('Lỗi: ' + (err.message || JSON.stringify(err)));
-      } finally {
-        btn.disabled = false;
+        log('Lỗi quét: ' + (err.message || JSON.stringify(err)));
+        btnScan.disabled = false;
       }
     };
-  </script>
-</body>
-</html>
+
+    // Nút Hủy trên popup
+    btnModalCancel.onclick = () => {
+      modal.style.display = 'none';
+      log('Đã hủy thao tác xóa.');
+      btnScan.disabled = false;
+    };
+
+    // Bước 2: Bấm Đồng ý trên popup -> Tiến hành xóa
+    btnModalOk.onclick = async () => {
+      modal.style.display = 'none';
+      log(`Bắt đầu xóa ${pendingDeleteIds.length} dòng...`);
+
+      let successCount = 0;
+      let failCount = 0;
+
+      // Xóa trực tiếp từng dòng để bypass hoàn toàn các giới hạn batch
+      for (let i = 0; i < pendingDeleteIds.length; i++) {
+        const id = pendingDeleteIds[i];
+        try {
+          await activeTable.deleteRecord(
