@@ -4,248 +4,96 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dọn dẹp bản ghi</title>
-  <!-- Nhúng Bitable JS SDK -->
   <script src="https://unpkg.com/@lark-base-open/js-sdk@0.5.15/dist/index.umd.js"></script>
   <style>
     * { box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      padding: 16px;
-      margin: 0;
-      background: #ffffff;
-      color: #1f2329;
-    }
-    h3 { margin: 0 0 6px 0; font-size: 16px; font-weight: 600; }
-    p { margin: 0 0 12px 0; font-size: 13px; color: #646a73; line-height: 1.4; }
-    .badge {
-      background: #f2f3f5;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-family: monospace;
-      font-size: 12px;
-    }
-    #btn-scan {
-      width: 100%;
-      padding: 11px;
-      background: #d83931;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    #btn-scan:hover { background: #b82a23; }
-    #btn-scan:disabled { background: #bbbfc4; cursor: not-allowed; }
-    #log {
-      margin-top: 14px;
-      padding: 10px;
-      background: #f5f6f7;
-      border: 1px solid #dee0e3;
-      border-radius: 6px;
-      font-size: 12px;
-      max-height: 240px;
-      overflow-y: auto;
-      white-space: pre-wrap;
-      line-height: 1.5;
-    }
-
-    /* Modal Popup Xác Nhận */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 9999;
-      align-items: center;
-      justify-content: center;
-      padding: 16px;
-    }
-    .modal-box {
-      background: #ffffff;
-      border-radius: 8px;
-      padding: 20px;
-      width: 100%;
-      max-width: 320px;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-      text-align: center;
-    }
-    .modal-box h4 {
-      margin: 0 0 10px 0;
-      font-size: 16px;
-      color: #1f2329;
-    }
-    .modal-box p {
-      font-size: 13px;
-      color: #646a73;
-      margin: 0 0 18px 0;
-      line-height: 1.4;
-    }
-    .modal-btns {
-      display: flex;
-      gap: 10px;
-    }
-    .modal-btns button {
-      flex: 1;
-      padding: 9px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      border: 1px solid transparent;
-    }
-    .btn-cancel {
-      background: #f2f3f5;
-      color: #1f2329;
-      border-color: #dee0e3;
-    }
-    .btn-cancel:hover { background: #e5e6eb; }
-    .btn-confirm {
-      background: #d83931;
-      color: #ffffff;
-    }
-    .btn-confirm:hover { background: #b82a23; }
+    body { font-family: sans-serif; padding: 16px; margin: 0; }
+    button { width: 100%; padding: 11px; background: #d83931; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    #log { margin-top: 14px; padding: 10px; background: #f5f6f7; font-size: 12px; max-height: 250px; overflow-y: auto; white-space: pre-wrap; }
+    .modal { display: none; position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 999; }
+    .modal-box { background: #fff; padding: 20px; border-radius: 8px; width: 90%; text-align: center; }
+    .modal-btns { display: flex; gap: 10px; margin-top: 15px; }
+    .modal-btns button { flex: 1; padding: 8px; }
   </style>
 </head>
 <body>
-  <h3>Dọn dẹp bản ghi hết hạn</h3>
-  <p>Quét cột <span class="badge">[Hết hạn (Xóa)]</span> có chữ <b>"Xóa"</b> và xóa trực tiếp.</p>
+  <button id="btn-scan">Quét & Xóa</button>
+  <div id="log">Sẵn sàng (v1.3 - Debug)</div>
 
-  <button id="btn-scan">Quét & Xóa bản ghi quá hạn</button>
-  <div id="log">Sẵn sàng thực thi... (v1.2)</div>
-
-  <!-- Popup Xác nhận -->
-  <div id="modalConfirm" class="modal-overlay">
+  <div id="modalConfirm" class="modal">
     <div class="modal-box">
-      <h4>Xác nhận xóa</h4>
-      <p id="modal-text">Tìm thấy các bản ghi quá hạn. Bạn có chắc chắn muốn xóa vĩnh viễn?</p>
+      <h4 style="margin:0 0 10px">Xác nhận xóa</h4>
+      <p id="modal-text">Bạn chắc chắn muốn xóa?</p>
       <div class="modal-btns">
-        <button id="btn-cancel" class="btn-cancel">Hủy</button>
-        <button id="btn-ok" class="btn-confirm">Đồng ý xóa</button>
+        <button onclick="document.getElementById('modalConfirm').style.display='none'">Hủy</button>
+        <button id="btn-ok" style="background:#d83931; color:#fff; border:none">Xóa luôn</button>
       </div>
     </div>
   </div>
 
   <script>
     const bitable = window.bitableSDK.bitable;
-    const btnScan = document.getElementById('btn-scan');
     const logEl = document.getElementById('log');
-    
-    const modal = document.getElementById('modalConfirm');
-    const modalText = document.getElementById('modal-text');
-    const btnCancel = document.getElementById('btn-cancel');
-    const btnOk = document.getElementById('btn-ok');
-
     let targetTable = null;
     let recordsToDelete = [];
 
-    function log(msg) {
-      logEl.innerText += '\n' + msg;
-      logEl.scrollTop = logEl.scrollHeight;
-    }
+    function log(msg) { logEl.innerText += '\n' + msg; logEl.scrollTop = logEl.scrollHeight; }
 
-    // 1. Quét tìm dòng cần xóa
-    btnScan.onclick = async () => {
+    document.getElementById('btn-scan').onclick = async () => {
       try {
-        btnScan.disabled = true;
-        logEl.innerText = 'Đang kết nối bảng...';
-
+        log('Đang lấy bảng...');
         targetTable = await bitable.base.getActiveTable();
-        const tableName = await targetTable.getName();
-        log(`Đang thao tác tại bảng: [${tableName}]`);
-
         const fields = await targetTable.getFieldList();
-        const colExpired = fields.find(f => f.name.trim().includes('Hết hạn (Xóa)'));
+        const colExpired = fields.find(f => f.name.includes('Hết hạn (Xóa)'));
 
-        if (!colExpired) {
-          log('LỖI: Không tìm thấy cột [Hết hạn (Xóa)]!');
-          btnScan.disabled = false;
-          return;
-        }
+        if (!colExpired) return log('LỖI: Không tìm thấy cột [Hết hạn (Xóa)]');
 
-        log('Đang quét danh sách bản ghi...');
         const recordIds = await targetTable.getRecordIdList();
-        log(`Tổng số bản ghi trong bảng: ${recordIds.length}`);
-
+        log(`Tìm thấy ${recordIds.length} dòng. Đang đọc dữ liệu...`);
         recordsToDelete = [];
 
-        for (const id of recordIds) {
+        for (let i = 0; i < recordIds.length; i++) {
+          const id = recordIds[i];
           let text = '';
-          // Ưu tiên đọc chuỗi text hiển thị của Formula
-          try {
-            text = await targetTable.getCellString(colExpired.id, id);
-          } catch (e) {}
-
-          // Nếu getCellString trống, bóc tách cấu trúc Formula thô
-          if (!text) {
-            try {
-              const val = await colExpired.getValue(id);
-              if (typeof val === 'string') {
-                text = val;
-              } else if (Array.isArray(val)) {
-                text = val.map(v => v?.text || '').join('');
-              } else if (val && typeof val === 'object') {
-                text = val.text || JSON.stringify(val);
-              }
-            } catch (e) {}
+          
+          // Đọc trực tiếp dữ liệu thô
+          const val = await colExpired.getValue(id);
+          
+          if (val) {
+            if (typeof val === 'string') text = val;
+            else if (Array.isArray(val)) text = val.map(v => v.text || v.name || '').join('');
+            else if (typeof val === 'object') text = val.text || JSON.stringify(val);
           }
 
-          if (text && text.trim().includes('Xóa')) {
+          // In thử giá trị 3 dòng đầu tiên ra màn hình để debug
+          if (i < 3) {
+            log(`Dòng ${i+1} đọc được: "${text}"`);
+          }
+
+          if (text && text.includes('Xóa')) {
             recordsToDelete.push(id);
           }
         }
 
         if (recordsToDelete.length === 0) {
-          log('Quét xong. Không có dòng nào có chữ "Xóa".');
-          btnScan.disabled = false;
-          return;
+          return log('Quét xong. KHÔNG tìm thấy dòng nào chứa chữ "Xóa"!');
         }
 
-        // Hiện popup xác nhận
-        modalText.innerHTML = `Tìm thấy <b>${recordsToDelete.length}</b> dòng có chữ "Xóa".<br>Bạn có chắc chắn muốn xóa không?`;
-        modal.style.display = 'flex';
+        document.getElementById('modal-text').innerHTML = `Phát hiện <b>${recordsToDelete.length}</b> dòng có chữ Xóa. Xóa nhé?`;
+        document.getElementById('modalConfirm').style.display = 'flex';
       } catch (err) {
-        log('Lỗi khi quét: ' + (err.message || JSON.stringify(err)));
-        btnScan.disabled = false;
+        log('Lỗi: ' + err.message);
       }
     };
 
-    // Nút Hủy
-    btnCancel.onclick = () => {
-      modal.style.display = 'none';
-      log('Đã hủy thao tác xóa.');
-      btnScan.disabled = false;
-    };
-
-    // 2. Người dùng bấm Đồng ý xóa trên popup
-    btnOk.onclick = async () => {
-      modal.style.display = 'none';
-      log(`Đang tiến hành xóa ${recordsToDelete.length} dòng...`);
-
-      let count = 0;
-      let errors = 0;
-
-      for (let i = 0; i < recordsToDelete.length; i++) {
-        const id = recordsToDelete[i];
-        try {
-          await targetTable.deleteRecord(id);
-          count++;
-        } catch (e) {
-          try {
-            await targetTable.deleteRecords([id]);
-            count++;
-          } catch (e2) {
-            errors++;
-            log(`Lỗi dòng ${id}: ${e2.message || e2}`);
-          }
-        }
+    document.getElementById('btn-ok').onclick = async () => {
+      document.getElementById('modalConfirm').style.display = 'none';
+      log(`Đang xóa ${recordsToDelete.length} dòng...`);
+      let success = 0;
+      for (const id of recordsToDelete) {
+        try { await targetTable.deleteRecord(id); success++; } catch(e){}
       }
-
-      log(`HOÀN TẤT: Đã xóa thành công ${count}/${recordsToDelete.length} dòng.`);
-      if (errors > 0) {
-        log(`(Có ${errors} dòng gặp lỗi quyền hạn).`);
-      }
-      btnScan.disabled = false;
+      log(`Đã xóa thành công: ${success} dòng.`);
     };
   </script>
 </body>
