@@ -3,193 +3,127 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dọn dẹp lịch sử giá</title>
+  <title>Dọn dẹp bản ghi hết hạn</title>
   <script src="https://unpkg.com/@lark-base-open/js-sdk@0.5.15/dist/index.umd.js"></script>
   <style>
     * { box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       padding: 16px;
       margin: 0;
+      background: #fff;
       color: #1f2329;
-      background: #ffffff;
     }
-    h3 {
-      margin: 0 0 8px 0;
-      font-size: 16px;
-      font-weight: 600;
-    }
-    p {
-      margin: 0 0 16px 0;
-      font-size: 13px;
-      color: #646a73;
-      line-height: 1.5;
-    }
-    .badge {
-      display: inline-block;
-      padding: 2px 6px;
-      background: #f2f3f5;
-      border-radius: 4px;
-      color: #1f2329;
-      font-family: monospace;
-    }
+    h3 { margin: 0 0 8px 0; font-size: 16px; font-weight: 600; }
+    p { margin: 0 0 14px 0; font-size: 13px; color: #646a73; line-height: 1.4; }
     button {
       width: 100%;
       padding: 11px;
       background: #d83931;
-      color: #fff;
+      color: white;
       border: none;
       border-radius: 6px;
       font-size: 14px;
       font-weight: 600;
       cursor: pointer;
-      transition: background 0.2s;
     }
-    button:hover { background: #b82a23; }
-    button:disabled {
-      background: #bbbfc4;
-      cursor: not-allowed;
-    }
-    #log-box {
+    button:disabled { background: #bbbfc4; cursor: not-allowed; }
+    #log {
       margin-top: 14px;
       padding: 10px;
       background: #f5f6f7;
       border: 1px solid #dee0e3;
       border-radius: 6px;
       font-size: 12px;
-      line-height: 1.6;
-      max-height: 220px;
+      max-height: 250px;
       overflow-y: auto;
       white-space: pre-wrap;
-      word-break: break-all;
+      line-height: 1.5;
     }
-    .log-info { color: #3370ff; }
-    .log-success { color: #008a00; font-weight: bold; }
-    .log-warn { color: #de7802; }
-    .log-error { color: #d83931; font-weight: bold; }
   </style>
 </head>
 <body>
-  <h3>Dọn dẹp lịch sử giá tiếp cận</h3>
-  <p>
-    Tự động tìm bảng <span class="badge">LỊCH SỬ GIÁ TIẾP CẬN</span> và xóa toàn bộ bản ghi có cột <span class="badge">Hết hạn (Xóa) = "Xóa"</span>.
-  </p>
-
-  <button id="btn-run">Bắt đầu quét & Xóa</button>
-  <div id="log-box">Sẵn sàng thực thi...</div>
+  <h3>Dọn dẹp bản ghi hết hạn</h3>
+  <p>Tự động quét cột <b>[Hết hạn (Xóa)]</b> có chữ <b>"Xóa"</b> và xóa trực tiếp.</p>
+  <button id="btn-del">Xóa các dòng quá hạn</button>
+  <div id="log">Sẵn sàng...</div>
 
   <script>
     const bitable = window.bitableSDK.bitable;
-    const btn = document.getElementById('btn-run');
-    const logBox = document.getElementById('log-box');
+    const btn = document.getElementById('btn-del');
+    const logEl = document.getElementById('log');
 
-    function log(text, type = 'info') {
-      const el = document.createElement('div');
-      el.className = `log-${type}`;
-      el.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
-      logBox.appendChild(el);
-      logBox.scrollTop = logBox.scrollHeight;
+    function print(msg) {
+      logEl.innerText += '\n' + msg;
+      logEl.scrollTop = logEl.scrollHeight;
     }
 
     btn.onclick = async () => {
-      btn.disabled = true;
-      logBox.innerHTML = '';
-      log('Bắt đầu kết nối Lark Base...', 'info');
-
       try {
-        // 1. Tìm đúng bảng mục tiêu
-        const tableList = await bitable.base.getTableList();
-        let targetTable = null;
+        btn.disabled = true;
+        logEl.innerText = 'Đang kết nối bảng...';
 
-        for (const t of tableList) {
-          const name = await t.getName();
-          if (name.trim().toUpperCase() === 'LỊCH SỬ GIÁ TIẾP CẬN') {
-            targetTable = t;
-            break;
-          }
-        }
+        // Lấy đúng bảng hiện tại đang hiển thị
+        const table = await bitable.base.getActiveTable();
+        const fieldList = await table.getFieldList();
 
-        // Nếu không tìm thấy tên bảng khớp hoàn toàn, fallback về bảng đang hiển thị
-        if (!targetTable) {
-          targetTable = await bitable.base.getActiveTable();
-          const activeName = await targetTable.getName();
-          log(`Không tìm thấy bảng "LỊCH SỬ GIÁ TIẾP CẬN", đang dùng bảng hiện tại: "${activeName}"`, 'warn');
-        } else {
-          log('Đã định vị đúng bảng [LỊCH SỬ GIÁ TIẾP CẬN].', 'info');
-        }
-
-        // 2. Tìm đúng cột [Hết hạn (Xóa)]
-        const fieldList = await targetTable.getFieldList();
-        let targetField = null;
-
-        for (const f of fieldList) {
-          if (f.name.trim().toUpperCase() === 'HẾT HẠN (XÓA)') {
-            targetField = f;
-            break;
-          }
-        }
-
+        // Tìm trường cột [Hết hạn (Xóa)]
+        const targetField = fieldList.find(f => f.name.includes('Hết hạn (Xóa)'));
         if (!targetField) {
-          const availableFields = fieldList.map(f => `[${f.name}]`).join(', ');
-          log(`Lỗi: Không tìm thấy cột [Hết hạn (Xóa)]. Các cột hiện có: ${availableFields}`, 'error');
+          print('LỖI: Không tìm thấy cột [Hết hạn (Xóa)]');
           btn.disabled = false;
           return;
         }
 
-        // 3. Quét danh sách bản ghi
-        log('Đang lấy danh sách ID bản ghi...', 'info');
-        const recordIds = await targetTable.getRecordIdList();
-        log(`Tổng số dòng trong bảng: ${recordIds.length}`, 'info');
+        print('Đang lấy danh sách các dòng...');
+        const recordIds = await table.getRecordIdList();
+        print(`Tìm thấy tổng cộng ${recordIds.length} dòng.`);
 
-        if (!recordIds || recordIds.length === 0) {
-          log('Bảng rỗng, không có dữ liệu để xử lý.', 'warn');
-          btn.disabled = false;
-          return;
-        }
+        const toDelete = [];
 
-        log('Đang kiểm tra từng dòng dữ liệu...', 'info');
-        const toDeleteIds = [];
-
-        for (const rId of recordIds) {
-          let textValue = '';
+        for (const id of recordIds) {
+          let text = '';
           try {
-            // Lấy chuỗi hiển thị thực tế của ô
-            textValue = await targetTable.getCellString(targetField.id, rId);
+            // Lấy trực tiếp văn bản hiển thị từ cột công thức
+            text = await table.getCellString(targetField.id, id);
           } catch (e) {
-            const raw = await targetField.getValue(rId);
-            if (typeof raw === 'string') {
-              textValue = raw;
-            } else if (raw && typeof raw === 'object') {
-              textValue = raw.text || JSON.stringify(raw);
+            const raw = await targetField.getValue(id);
+            text = typeof raw === 'string' ? raw : JSON.stringify(raw);
+          }
+
+          if (text && text.trim().includes('Xóa')) {
+            toDelete.push(id);
+          }
+        }
+
+        if (toDelete.length === 0) {
+          print('Không có dòng nào chứa chữ "Xóa".');
+          btn.disabled = false;
+          return;
+        }
+
+        print(`Phát hiện ${toDelete.length} dòng có chữ "Xóa". Đang xóa...`);
+
+        // Xóa lần lượt từng dòng nếu deleteRecords hàng loạt bị chặn quyền
+        let successCount = 0;
+        try {
+          await table.deleteRecords(toDelete);
+          successCount = toDelete.length;
+        } catch (batchErr) {
+          print('Xóa hàng loạt không được, chuyển sang xóa từng dòng...');
+          for (const id of toDelete) {
+            try {
+              await table.deleteRecord(id);
+              successCount++;
+            } catch (singleErr) {
+              print(`Lỗi xóa dòng ${id}: ${singleErr.message}`);
             }
           }
-
-          if (textValue && textValue.trim() === 'Xóa') {
-            toDeleteIds.push(rId);
-          }
         }
 
-        if (toDeleteIds.length === 0) {
-          log('Quét xong. Không có dòng nào có giá trị "Xóa" cần xóa.', 'warn');
-          btn.disabled = false;
-          return;
-        }
-
-        // 4. Tiến hành xóa theo từng mảng 500 ID
-        log(`Tìm thấy ${toDeleteIds.length} dòng hết hạn. Đang tiến hành xóa...`, 'info');
-        const batchSize = 500;
-        let deletedCount = 0;
-
-        for (let i = 0; i < toDeleteIds.length; i += batchSize) {
-          const batch = toDeleteIds.slice(i, i + batchSize);
-          await targetTable.deleteRecords(batch);
-          deletedCount += batch.length;
-          log(`Đã xóa: ${deletedCount}/${toDeleteIds.length} dòng...`, 'info');
-        }
-
-        log(`Hoàn tất! Đã xóa thành công toàn bộ ${toDeleteIds.length} bản ghi hết hạn.`, 'success');
+        print(`Xong! Đã xóa thành công ${successCount} dòng.`);
       } catch (err) {
-        log(`Lỗi hệ thống: ${err.message || JSON.stringify(err)}`, 'error');
+        print('Lỗi: ' + (err.message || JSON.stringify(err)));
       } finally {
         btn.disabled = false;
       }
