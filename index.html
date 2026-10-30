@@ -4,14 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dọn dẹp</title>
-  <!-- Nhúng Bitable SDK chính thức qua CDN chuẩn của Lark -->
-  <script src="https://lf1-cdn-tos.bytegoofy.com/goofy/lark/bitable_extension/js-sdk/0.5.15/index.umd.js"></script>
+  <!-- Nạp SDK qua jsDelivr (ổn định nhất tại VN, ít bị chặn CORS) -->
+  <script src="https://cdn.jsdelivr.net/npm/@lark-base-open/js-sdk@0.5.15/dist/index.umd.js"></script>
   <style>
     * { box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 14px; margin: 0; background: #fff; }
     button { width: 100%; padding: 11px; background: #d83931; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; }
     button:disabled { background: #bbbfc4; cursor: not-allowed; }
-    #log { margin-top: 12px; padding: 10px; background: #f5f6f7; border: 1px solid #dee0e3; border-radius: 6px; font-size: 12px; max-height: 220px; overflow-y: auto; white-space: pre-wrap; line-height: 1.5; }
+    #log { margin-top: 12px; padding: 10px; background: #f5f6f7; border: 1px solid #dee0e3; border-radius: 6px; font-size: 12px; max-height: 240px; overflow-y: auto; white-space: pre-wrap; line-height: 1.5; }
     .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center; }
     .modal-box { background: #fff; padding: 18px; border-radius: 8px; width: 85%; max-width: 300px; text-align: center; }
     .modal-box h4 { margin: 0 0 10px; font-size: 15px; }
@@ -21,8 +21,8 @@
   </style>
 </head>
 <body>
-  <button id="btn-run" onclick="startScan()">Quét & Xóa (v1.4)</button>
-  <div id="log">Sẵn sàng thực thi...</div>
+  <button id="btn-run" onclick="startScan()">Quét & Xóa (v1.5)</button>
+  <div id="log">Đang kiểm tra môi trường SDK...</div>
 
   <div id="modalBox" class="modal-overlay">
     <div class="modal-box">
@@ -39,6 +39,7 @@
     const logEl = document.getElementById('log');
     let toDeleteList = [];
     let curTable = null;
+    let bitableInstance = null;
 
     function writeLog(msg) {
       logEl.innerText += '\n' + msg;
@@ -51,28 +52,53 @@
       writeLog('Đã hủy thao tác.');
     }
 
-    // Nhận diện biến bitable từ các CDN khác nhau
-    function getBitableInstance() {
+    // Cơ chế phát hiện SDK đa tầng
+    function findBitable() {
       if (window.bitable) return window.bitable;
       if (window.bitableSDK && window.bitableSDK.bitable) return window.bitableSDK.bitable;
+      if (window.BitableSDK && window.BitableSDK.bitable) return window.BitableSDK.bitable;
+      try {
+        if (window.parent && window.parent.bitable) return window.parent.bitable;
+        if (window.parent && window.parent.bitableSDK && window.parent.bitableSDK.bitable) return window.parent.bitableSDK.bitable;
+      } catch (e) {}
       return null;
     }
+
+    // Tự động kiểm tra SDK khi vừa mở Extension
+    window.addEventListener('DOMContentLoaded', () => {
+      let attempts = 0;
+      const timer = setInterval(() => {
+        attempts++;
+        bitableInstance = findBitable();
+        if (bitableInstance) {
+          clearInterval(timer);
+          logEl.innerText = 'Sẵn sàng! SDK đã kết nối thành công. (v1.5)';
+        } else if (attempts >= 20) {
+          clearInterval(timer);
+          logEl.innerText = 'Cảnh báo: Chưa nhận diện được SDK trực tiếp. Vẫn có thể bấm nút để thử kích hoạt.';
+        }
+      }, 200);
+    });
 
     async function startScan() {
       const btn = document.getElementById('btn-run');
       btn.disabled = true;
       logEl.innerText = 'Đang kích hoạt SDK...';
 
-      const bitable = getBitableInstance();
-      if (!bitable) {
-        writeLog('LỖI: Chưa nạp được SDK của Lark. Kiểm tra lại kết nối mạng!');
+      if (!bitableInstance) {
+        bitableInstance = findBitable();
+      }
+
+      if (!bitableInstance) {
+        writeLog('LỖI: Trình duyệt chặn nạp SDK hoặc CSP iframe từ chối nạp script ngoài.');
+        writeLog('Chi tiết window keys: ' + Object.keys(window).filter(k => k.toLowerCase().includes('bitable')).join(', '));
         btn.disabled = false;
         return;
       }
 
       try {
-        writeLog('Đang kết nối vào bảng...');
-        curTable = await bitable.base.getActiveTable();
+        writeLog('Đang kết nối vào bảng Base...');
+        curTable = await bitableInstance.base.getActiveTable();
         const tableName = await curTable.getName();
         writeLog(`Bảng hiện tại: [${tableName}]`);
 
@@ -138,12 +164,12 @@
             await curTable.deleteRecords([id]);
             count++;
           } catch (e2) {
-            writeLog(`Lỗi xóa: ${e2.message || e2}`);
+            writeLog(`Lỗi xóa dòng ${id}: ${e2.message || e2}`);
           }
         }
       }
 
-      writeLog(`HOÀN TẤT: Đã xóa ${count}/${toDeleteList.length} dòng.`);
+      writeLog(`HOÀN TẤT: Đã xóa thành công ${count}/${toDeleteList.length} dòng.`);
       document.getElementById('btn-run').disabled = false;
     }
   </script>
