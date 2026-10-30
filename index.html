@@ -3,99 +3,193 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dọn dẹp lịch sử</title>
-  <!-- Nhúng trực tiếp SDK chính thức của Lark Bitable -->
+  <title>Dọn dẹp lịch sử giá</title>
   <script src="https://unpkg.com/@lark-base-open/js-sdk@0.5.15/dist/index.umd.js"></script>
   <style>
+    * { box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       padding: 16px;
       margin: 0;
-      background-color: #fff;
+      color: #1f2329;
+      background: #ffffff;
     }
     h3 {
+      margin: 0 0 8px 0;
       font-size: 16px;
-      margin-top: 0;
-      color: #1f2329;
+      font-weight: 600;
     }
     p {
+      margin: 0 0 16px 0;
       font-size: 13px;
       color: #646a73;
       line-height: 1.5;
     }
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      background: #f2f3f5;
+      border-radius: 4px;
+      color: #1f2329;
+      font-family: monospace;
+    }
     button {
       width: 100%;
-      padding: 10px;
-      background-color: #d83931;
-      color: white;
+      padding: 11px;
+      background: #d83931;
+      color: #fff;
       border: none;
       border-radius: 6px;
       font-size: 14px;
       font-weight: 600;
       cursor: pointer;
-      margin-top: 10px;
+      transition: background 0.2s;
     }
+    button:hover { background: #b82a23; }
     button:disabled {
-      background-color: #bbbfc4;
+      background: #bbbfc4;
       cursor: not-allowed;
     }
-    #status {
-      margin-top: 12px;
-      font-size: 13px;
-      font-weight: 500;
+    #log-box {
+      margin-top: 14px;
+      padding: 10px;
+      background: #f5f6f7;
+      border: 1px solid #dee0e3;
+      border-radius: 6px;
+      font-size: 12px;
+      line-height: 1.6;
+      max-height: 220px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
     }
+    .log-info { color: #3370ff; }
+    .log-success { color: #008a00; font-weight: bold; }
+    .log-warn { color: #de7802; }
+    .log-error { color: #d83931; font-weight: bold; }
   </style>
 </head>
 <body>
-  <h3>Dọn dẹp bản ghi hết hạn</h3>
-  <p>Tự động quét cột <b>[Hết hạn (Xóa)]</b> có giá trị là <b>"Xóa"</b> và xóa khỏi bảng hiện tại.</p>
-  <button id="btn-clean">Xóa các dòng quá hạn</button>
-  <div id="status"></div>
+  <h3>Dọn dẹp lịch sử giá tiếp cận</h3>
+  <p>
+    Tự động tìm bảng <span class="badge">LỊCH SỬ GIÁ TIẾP CẬN</span> và xóa toàn bộ bản ghi có cột <span class="badge">Hết hạn (Xóa) = "Xóa"</span>.
+  </p>
+
+  <button id="btn-run">Bắt đầu quét & Xóa</button>
+  <div id="log-box">Sẵn sàng thực thi...</div>
 
   <script>
     const bitable = window.bitableSDK.bitable;
-    const btn = document.getElementById('btn-clean');
-    const status = document.getElementById('status');
+    const btn = document.getElementById('btn-run');
+    const logBox = document.getElementById('log-box');
+
+    function log(text, type = 'info') {
+      const el = document.createElement('div');
+      el.className = `log-${type}`;
+      el.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+      logBox.appendChild(el);
+      logBox.scrollTop = logBox.scrollHeight;
+    }
 
     btn.onclick = async () => {
-      try {
-        btn.disabled = true;
-        status.style.color = '#3370ff';
-        status.innerText = 'Đang quét dữ liệu...';
+      btn.disabled = true;
+      logBox.innerHTML = '';
+      log('Bắt đầu kết nối Lark Base...', 'info');
 
-        const table = await bitable.base.getActiveTable();
-        const fieldList = await table.getFieldList();
-        const targetField = fieldList.find(f => f.name === 'Hết hạn (Xóa)');
+      try {
+        // 1. Tìm đúng bảng mục tiêu
+        const tableList = await bitable.base.getTableList();
+        let targetTable = null;
+
+        for (const t of tableList) {
+          const name = await t.getName();
+          if (name.trim().toUpperCase() === 'LỊCH SỬ GIÁ TIẾP CẬN') {
+            targetTable = t;
+            break;
+          }
+        }
+
+        // Nếu không tìm thấy tên bảng khớp hoàn toàn, fallback về bảng đang hiển thị
+        if (!targetTable) {
+          targetTable = await bitable.base.getActiveTable();
+          const activeName = await targetTable.getName();
+          log(`Không tìm thấy bảng "LỊCH SỬ GIÁ TIẾP CẬN", đang dùng bảng hiện tại: "${activeName}"`, 'warn');
+        } else {
+          log('Đã định vị đúng bảng [LỊCH SỬ GIÁ TIẾP CẬN].', 'info');
+        }
+
+        // 2. Tìm đúng cột [Hết hạn (Xóa)]
+        const fieldList = await targetTable.getFieldList();
+        let targetField = null;
+
+        for (const f of fieldList) {
+          if (f.name.trim().toUpperCase() === 'HẾT HẠN (XÓA)') {
+            targetField = f;
+            break;
+          }
+        }
 
         if (!targetField) {
-          status.style.color = '#d83931';
-          status.innerText = 'Không tìm thấy cột [Hết hạn (Xóa)]!';
+          const availableFields = fieldList.map(f => `[${f.name}]`).join(', ');
+          log(`Lỗi: Không tìm thấy cột [Hết hạn (Xóa)]. Các cột hiện có: ${availableFields}`, 'error');
           btn.disabled = false;
           return;
         }
 
-        const ids = await table.getRecordIdList();
-        const toDelete = [];
+        // 3. Quét danh sách bản ghi
+        log('Đang lấy danh sách ID bản ghi...', 'info');
+        const recordIds = await targetTable.getRecordIdList();
+        log(`Tổng số dòng trong bảng: ${recordIds.length}`, 'info');
 
-        for (const id of ids) {
-          const val = await targetField.getValue(id);
-          if (val === 'Xóa' || (Array.isArray(val) && val[0]?.text === 'Xóa')) {
-            toDelete.push(id);
+        if (!recordIds || recordIds.length === 0) {
+          log('Bảng rỗng, không có dữ liệu để xử lý.', 'warn');
+          btn.disabled = false;
+          return;
+        }
+
+        log('Đang kiểm tra từng dòng dữ liệu...', 'info');
+        const toDeleteIds = [];
+
+        for (const rId of recordIds) {
+          let textValue = '';
+          try {
+            // Lấy chuỗi hiển thị thực tế của ô
+            textValue = await targetTable.getCellString(targetField.id, rId);
+          } catch (e) {
+            const raw = await targetField.getValue(rId);
+            if (typeof raw === 'string') {
+              textValue = raw;
+            } else if (raw && typeof raw === 'object') {
+              textValue = raw.text || JSON.stringify(raw);
+            }
+          }
+
+          if (textValue && textValue.trim() === 'Xóa') {
+            toDeleteIds.push(rId);
           }
         }
 
-        if (toDelete.length === 0) {
-          status.style.color = '#008a00';
-          status.innerText = 'Không có dòng nào quá hạn.';
-        } else {
-          status.innerText = `Đang xóa ${toDelete.length} dòng...`;
-          await table.deleteRecords(toDelete);
-          status.style.color = '#008a00';
-          status.innerText = `Đã xóa thành công ${toDelete.length} dòng!`;
+        if (toDeleteIds.length === 0) {
+          log('Quét xong. Không có dòng nào có giá trị "Xóa" cần xóa.', 'warn');
+          btn.disabled = false;
+          return;
         }
+
+        // 4. Tiến hành xóa theo từng mảng 500 ID
+        log(`Tìm thấy ${toDeleteIds.length} dòng hết hạn. Đang tiến hành xóa...`, 'info');
+        const batchSize = 500;
+        let deletedCount = 0;
+
+        for (let i = 0; i < toDeleteIds.length; i += batchSize) {
+          const batch = toDeleteIds.slice(i, i + batchSize);
+          await targetTable.deleteRecords(batch);
+          deletedCount += batch.length;
+          log(`Đã xóa: ${deletedCount}/${toDeleteIds.length} dòng...`, 'info');
+        }
+
+        log(`Hoàn tất! Đã xóa thành công toàn bộ ${toDeleteIds.length} bản ghi hết hạn.`, 'success');
       } catch (err) {
-        status.style.color = '#d83931';
-        status.innerText = 'Lỗi: ' + err.message;
+        log(`Lỗi hệ thống: ${err.message || JSON.stringify(err)}`, 'error');
       } finally {
         btn.disabled = false;
       }
